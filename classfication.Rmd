@@ -1,0 +1,317 @@
+---
+title: "Auto-Insurance Loan Classification"
+authors: Rahul Narvekar
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Cleaning Data to omit null values, and turning data into factors
+```{r clean-data}
+library('caret')
+InsuranceClaims = read.csv("car_ic.csv")
+InsuranceClaims = na.omit(InsuranceClaims)
+
+VehicleType = rep(0, length(InsuranceClaims$VEHICLE_TYPE))
+VehicleType[InsuranceClaims$VEHICLE_TYPE == "sports car"] = 1
+InsuranceClaims$VEHICLE_TYPE = VehicleType
+
+InsuranceClaims$OUTCOME = as.factor(InsuranceClaims$OUTCOME)
+VehicleYear = rep(0, length(InsuranceClaims$VEHICLE_YEAR))
+VehicleYear[InsuranceClaims$VEHICLE_YEAR == "after 2015"] = 1
+InsuranceClaims$VEHICLE_YEAR = VehicleYear
+
+Race = rep(0, length(InsuranceClaims$RACE))
+Race[InsuranceClaims$RACE == "majority"] = 1
+InsuranceClaims$RACE = Race
+
+Gender = rep(0, length(InsuranceClaims$GENDER))
+Gender[InsuranceClaims$GENDER == "male"] = 1
+InsuranceClaims$GENDER = Gender
+
+Age = rep(0, length(InsuranceClaims$AGE))
+Age[InsuranceClaims$AGE == "16-25"] = 1
+Age[InsuranceClaims$AGE == "26-39"] = 2
+Age[InsuranceClaims$AGE == "40-64"] = 3
+Age[InsuranceClaims$AGE == "65+"] = 4
+InsuranceClaims$AGE = Age
+
+Income = rep(0, length(InsuranceClaims$Income))
+Income[InsuranceClaims$INCOME == "poverty"] = 1
+Income[InsuranceClaims$INCOME == "working class"] = 2
+Income[InsuranceClaims$INCOME == "middle class"] = 3
+Income[InsuranceClaims$INCOME == "upper class"] = 4
+InsuranceClaims$INCOME = Income
+
+summary(InsuranceClaims)
+```
+
+# Visualizations
+Split the data into two subsets based on outcome
+```{r visualizations}
+FiledClaim = subset(InsuranceClaims, InsuranceClaims$OUTCOME == 1)
+DidNotFileClaim = subset(InsuranceClaims, InsuranceClaims$OUTCOME == 0)
+
+#filed
+par(mfrow=c(3, 4))
+plot(x=table(FiledClaim$AGE), main ="Age", type = "h", lwd = 5, ylab="frequency")
+plot(x=table(FiledClaim$DRIVING_EXPERIENCE), main ="Driving Experience", type = "h", lwd = 5, ylab="frequency")
+plot(x=table(FiledClaim$GENDER), main ="Gender",type = "h", ylim = c(0, max(table(FiledClaim$GENDER))), lwd = 5, ylab="frequency")
+plot(x=table(FiledClaim$RACE), main ="Race",ylim = c(0, max(table(FiledClaim$RACE))), lwd = 5, ylab="frequency")
+plot(x=table(FiledClaim$VEHICLE_OWNERSHIP), main ="Owned Vehicle",ylim = c(0, max(table(FiledClaim$VEHICLE_OWNERSHIP))), lwd = 5, ylab="frequency")
+plot(x=table(FiledClaim$VEHICLE_YEAR), main ="Vehicle Age", ylim = c(0, max(table(FiledClaim$VEHICLE_YEAR))), lwd = 5, ylab="frequency")
+hist(FiledClaim$SPEEDING_VIOLATIONS,  main ="Violations",xlab="violations")
+hist(FiledClaim$ANNUAL_MILEAGE, xlab="annual milage", main ="Annual Milage")
+hist(FiledClaim$DUIS, xlab = "duis", main="duis")
+hist(FiledClaim$PAST_ACCIDENTS, xlab="past accidents", main ="Past Accidents")
+hist(FiledClaim$CREDIT_SCORE, xlab="credit score", main ="credit score")
+plot(x=table(FiledClaim$CHILDREN), main ="Children",ylim = c(0, max(table(FiledClaim$CHILDREN))), lwd = 5, ylab="frequency")
+
+#non filed
+par(mfrow=c(3, 4))
+plot(x=table(DidNotFileClaim$AGE), main ="Age", type = "h", lwd = 5, ylab="frequency")
+plot(x=table(DidNotFileClaim$DRIVING_EXPERIENCE), main ="Driving Experience", type = "h", lwd = 5, ylab="frequency")
+plot(x=table(DidNotFileClaim$GENDER), main ="Gender",type = "h", ylim = c(0, max(table(DidNotFileClaim$GENDER))), lwd = 5, ylab="frequency")
+plot(x=table(DidNotFileClaim$RACE), main ="Race",ylim = c(0, max(table(DidNotFileClaim$RACE))), lwd = 5, ylab="frequency")
+plot(x=table(DidNotFileClaim$VEHICLE_OWNERSHIP), main ="Owned Vehicle",ylim = c(0, max(table(DidNotFileClaim$VEHICLE_OWNERSHIP))), lwd = 5, ylab="frequency")
+plot(x=table(DidNotFileClaim$VEHICLE_YEAR), main ="Vehicle Age", ylim = c(0, max(table(DidNotFileClaim$VEHICLE_YEAR))), lwd = 5, ylab="frequency")
+hist(DidNotFileClaim$SPEEDING_VIOLATIONS,  main ="Violations",xlab="violations")
+hist(DidNotFileClaim$ANNUAL_MILEAGE, xlab="annual milage", main ="Annual Milage")
+hist(DidNotFileClaim$DUIS, xlab = "duis", main="duis")
+hist(DidNotFileClaim$PAST_ACCIDENTS, xlab="past accidents", main ="Past Accidents")
+hist(DidNotFileClaim$CREDIT_SCORE, xlab="credit score", main ="credit score")
+plot(x=table(DidNotFileClaim$CHILDREN), main ="Children",ylim = c(0, max(table(DidNotFileClaim$CHILDREN))), lwd = 5, ylab="frequency")
+```
+
+Logistic Regression
+```{r logistic-regression}
+InsuranceClaims = subset(InsuranceClaims, select = -c(ID))
+trainingSet = sample(dim(InsuranceClaims)[1], dim(InsuranceClaims)[1] * 0.7)
+logistic = glm(OUTCOME ~ ., data = InsuranceClaims, family = "binomial", subset = trainingSet)
+summary(logistic)
+
+pVals = predict(logistic, newdata = InsuranceClaims[-trainingSet, ], type="response")
+predictions = rep(0, length(pVals))
+predictions[pVals > 0.5] = 1
+paste("Testing Error: ", toString(mean(predictions != InsuranceClaims[-trainingSet, ]$OUTCOME)))
+confusionMatrix(data = factor(predictions), reference = factor(InsuranceClaims[-trainingSet, ]$OUTCOME))
+```
+
+KNN
+```{r knn}
+library(class)
+#remove outcome variable
+icKNN = InsuranceClaims[c('CREDIT_SCORE', 'AGE','INCOME', 'GENDER', 'VEHICLE_OWNERSHIP','MARRIED','CHILDREN','RACE', 'ANNUAL_MILEAGE', 'SPEEDING_VIOLATIONS', 'DUIS', 'PAST_ACCIDENTS', 'OUTCOME')]
+
+#normalize numeric variables
+normalize = function(x) {
+  return (x-min(x))/(max(x) - min(x))
+}
+InsuranceClaimsNormal = as.data.frame(lapply(icKNN[,1:12], normalize))
+
+#test and train subsets
+dataPoints = sample(1:nrow(InsuranceClaimsNormal), size = nrow(InsuranceClaimsNormal)*0.7, replace = FALSE)
+training = icKNN[dataPoints, ]
+testing = icKNN[-dataPoints, ]
+trainingOutcome = icKNN[dataPoints, 13]
+testingOutcome = icKNN[-dataPoints, 13]
+
+#knn
+error =  100
+bestK = 0
+bestKNN = 0
+for(j in 1:25) { 
+  for(i in 1:25) {
+    knnVal =  knn(train = training, test = testing, cl = trainingOutcome, k = i)
+    testError = 1 - sum(testingOutcome == knnVal) / NROW(testingOutcome)
+    if(testError < error) {
+      error = testError
+      bestK = i
+      bestKNN = knnVal
+    }
+  }
+}
+print(bestK)
+paste("Test error: ", toString(error))
+confusionMatrix(data = factor(bestKNN), factor(testingOutcome))
+```
+
+
+Random Forest
+```{r random-forest}
+InsuranceClaims = read.csv("car_ic.csv")
+InsuranceClaims = na.omit(InsuranceClaims)
+
+InsuranceClaims$OUTCOME = as.factor(InsuranceClaims$OUTCOME)
+InsuranceClaims$VEHICLE_OWNERSHIP = as.factor(InsuranceClaims$VEHICLE_OWNERSHIP)
+InsuranceClaims$CHILDREN = as.factor(InsuranceClaims$CHILDREN)
+InsuranceClaims$MARRIED = as.factor(InsuranceClaims$MARRIED)
+InsuranceClaims = subset(InsuranceClaims, select = -c(ID))
+library(randomForest)
+
+#training and testing set
+trainingSet = sample(dim(InsuranceClaims)[1], dim(InsuranceClaims)[1] * 0.7)
+training = InsuranceClaims[trainingSet, ]
+testing = InsuranceClaims[-trainingSet, ]
+
+#random forest
+rf = randomForest(OUTCOME ~ . , data = testing, ntree = 500)
+varImpPlot(rf)
+print(rf)
+
+#prediction
+prediction = predict(rf, newdata = testing)
+paste("test error: ", toString(1 - mean(prediction == testing$OUTCOME)))
+confusionMatrix(data = factor(prediction), factor(testing$OUTCOME))
+```
+
+
+
+QDA
+```{r qda}
+attach(InsuranceClaims,warn.conflicts = FALSE)
+library(MASS)
+trainingSet = sample(dim(InsuranceClaims)[1], dim(InsuranceClaims)[1] * 0.7)
+training = InsuranceClaims[trainingSet, ]
+testing = InsuranceClaims[-trainingSet, ]
+# Fitting and prediction
+qda_fit = qda(OUTCOME~., data=training)
+print(qda_fit)
+summary(qda_fit)
+qda_predictions = predict(qda_fit, newdata=testing)
+predictions <- as.data.frame(lapply(qda_predictions, unlist))
+confusionMatrix(data = factor(predictions$class), factor(testing$OUTCOME))
+```
+
+LDA
+```{r lda}
+attach(InsuranceClaims,warn.conflicts = FALSE)
+library(MASS)
+trainingSet = sample(dim(InsuranceClaims)[1], dim(InsuranceClaims)[1] * 0.7)
+training = InsuranceClaims[trainingSet, ]
+testing = InsuranceClaims[-trainingSet, ]
+# Fit data and predict
+lda_fit = lda(OUTCOME~., data=training)
+lda_fit
+summary(lda_fit)
+lda_predictions = predict(lda_fit, newdata=testing)
+predictions <- as.data.frame(lapply(lda_predictions, unlist))
+confusionMatrix(data = factor(predictions$class), factor(testing$OUTCOME))
+```
+
+Boosting
+```{r boosting}
+attach(InsuranceClaims)
+InsuranceClaims = read.csv("car_ic.csv")
+InsuranceClaims = na.omit(InsuranceClaims)
+
+VehicleType = rep(0, length(InsuranceClaims$VEHICLE_TYPE))
+VehicleType[InsuranceClaims$VEHICLE_TYPE == "sports car"] = 1
+InsuranceClaims$VEHICLE_TYPE = VehicleType
+
+InsuranceClaims$OUTCOME = as.factor(InsuranceClaims$OUTCOME)
+VehicleYear = rep(0, length(InsuranceClaims$VEHICLE_YEAR))
+VehicleYear[InsuranceClaims$VEHICLE_YEAR == "after 2015"] = 1
+InsuranceClaims$VEHICLE_YEAR = VehicleYear
+
+Race = rep(0, length(InsuranceClaims$RACE))
+Race[InsuranceClaims$RACE == "majority"] = 1
+InsuranceClaims$RACE = Race
+
+Gender = rep(0, length(InsuranceClaims$GENDER))
+Gender[InsuranceClaims$GENDER == "male"] = 1
+InsuranceClaims$GENDER = Gender
+
+Age = rep(0, length(InsuranceClaims$AGE))
+Age[InsuranceClaims$AGE == "16-25"] = 1
+Age[InsuranceClaims$AGE == "26-39"] = 2
+Age[InsuranceClaims$AGE == "40-64"] = 3
+Age[InsuranceClaims$AGE == "65+"] = 4
+InsuranceClaims$AGE = Age
+
+Income = rep(0, length(InsuranceClaims$Income))
+Income[InsuranceClaims$INCOME == "poverty"] = 1
+Income[InsuranceClaims$INCOME == "working class"] = 2
+Income[InsuranceClaims$INCOME == "middle class"] = 3
+Income[InsuranceClaims$INCOME == "upper class"] = 4
+InsuranceClaims$INCOME = Income
+InsuranceClaims$AGE = as.factor(InsuranceClaims$AGE)
+InsuranceClaims$VEHICLE_TYPE = as.factor(InsuranceClaims$VEHICLE_TYPE)
+library(gbm)
+trainingSet = sample(dim(InsuranceClaims)[1], dim(InsuranceClaims)[1] * 0.7)
+training = InsuranceClaims[trainingSet, c('CREDIT_SCORE', 'AGE','INCOME', 'GENDER', 'VEHICLE_OWNERSHIP','MARRIED','CHILDREN','RACE', 'ANNUAL_MILEAGE', 'SPEEDING_VIOLATIONS', 'DUIS', 'PAST_ACCIDENTS', 'OUTCOME')]
+testing = InsuranceClaims[-trainingSet, c('CREDIT_SCORE', 'AGE','INCOME', 'GENDER', 'VEHICLE_OWNERSHIP','MARRIED','CHILDREN','RACE', 'ANNUAL_MILEAGE', 'SPEEDING_VIOLATIONS', 'DUIS', 'PAST_ACCIDENTS', 'OUTCOME')]
+set.seed(1)
+boosting.claims = gbm(as.integer(OUTCOME) - 1 ~., data=training,
+                      distribution="bernoulli",n.trees=2500, cv.folds=3)
+print(boosting.claims)
+summary(boosting.claims)
+predict.trees.gbm = predict.gbm(boosting.claims, newdata=testing, n.trees=2500)
+predictions = predict(boosting.claims, newdata=testing )
+prediction_classifier = vector()
+for (i in 1:length(predictions)) {
+  if(predictions[[i]]>=0) {
+    prediction_classifier = append(prediction_classifier, 1)
+  }
+  else {
+    prediction_classifier = append(prediction_classifier, 0)
+  }
+}
+confusionMatrix(data = factor(prediction_classifier), factor(testing$OUTCOME))
+```
+
+Classification Trees
+```{r classification-trees}
+library(tree)
+training = InsuranceClaims[trainingSet, ]
+testing = InsuranceClaims[-trainingSet, ]
+tree.claims = tree(OUTCOME~., data=training)
+tree.claims
+cv.tree.claims = cv.tree(tree.claims, FUN=prune.misclass)
+cv.tree.claims
+prune.claims <- prune.misclass(tree.claims , best = 2)
+plot(prune.claims)
+text(prune.claims, pretty =0)
+predictions = predict(tree.claims, testing, type="class")
+predictions.cv = predict(prune.claims, testing, type="class")
+confusionMatrix(data = factor(predictions), factor(testing$OUTCOME))
+confusionMatrix(data=factor(predictions.cv), factor(testing$OUTCOME))
+cv.tree.claims = cv.tree(tree.claims, FUN=prune.misclass)
+cv.tree.claims
+prune.claims <- prune.misclass(tree.claims , best = 6)
+plot(prune.claims)
+text(prune.claims, pretty =0)
+predictions.cv = predict(prune.claims, testing, type="class")
+confusionMatrix(data=factor(predictions.cv), factor(testing$OUTCOME))
+```
+
+
+
+SVM
+```{r SVM}
+library(kernlab)
+library(e1071) 
+
+#Grab features
+col = c('AGE','CHILDREN','VEHICLE_TYPE','PAST_ACCIDENTS','SPEEDING_VIOLATIONS','DUIS', 'OUTCOME')
+InsuranceClaims$OUTCOME = as.factor(InsuranceClaims$OUTCOME)
+
+#training and testing set
+trainingSet = sample(dim(InsuranceClaims)[1], dim(InsuranceClaims)[1] * 0.3)
+training = InsuranceClaims[trainingSet, col]
+testing = InsuranceClaims[-trainingSet, col]
+
+#tune
+tuned = tune(svm, OUTCOME ~ ., data = training, ranges = list(epsilon = seq(0,1, 0.1), cost =  2^(2:7)))
+summary(tuned)
+svmBest = tuned$best.model
+summary(svmBest)
+
+#prediction
+prediction = predict(svmBest, testing[, col], type = "class")
+plot(prediction)
+paste("test error: ", toString(1 - mean(prediction == testing[, 7])))
+confusionMatrix(data = factor(prediction), factor(testing[, 7]))
+```
+
+
